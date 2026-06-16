@@ -8,9 +8,7 @@
 #include "main.h" // Biblioteca HAL do STM32
 #include "config.h"
 
-// ---------------------------------------------------------
 // DEFINIÇÕES DE ESTADO DO SISTEMA
-// ---------------------------------------------------------
 typedef enum {
     MODO_MANUAL,
     MODO_AUTONOMO,    // Piloto Automático ativado (< 300ms acelerador)
@@ -19,9 +17,7 @@ typedef enum {
 
 EstadoVeiculo estado_atual = MODO_MANUAL;
 
-// ---------------------------------------------------------
 // VARIÁVEIS GLOBAIS DE CONTROLE
-// ---------------------------------------------------------
 volatile uint8_t duty_cycle = 0;       // 0 a 100%
 volatile uint32_t rpm_atual = 0;
 volatile uint32_t odometria_pulsos = 0;
@@ -33,18 +29,14 @@ uint32_t timer_50ms = 0;
 uint32_t timer_500ms = 0;
 uint32_t timer_1s = 0;
 
-// ---------------------------------------------------------
 // DECLARAÇÃO DAS FUNÇÕES EXTERNAS (Módulos)
-// ---------------------------------------------------------
 extern void Hardware_Init(void);           // Inicializa Clocks, GPIOs, Timers e ADCs
 extern void Atualiza_Interface_Visual(void);
 extern void Monitora_Volante_e_Setas(void);
 extern void Monitora_Temperatura(void);
 extern void Set_PWM_Motor(uint8_t duty);   // Agora atua direto no registrador CCR do Timer do STM32
 
-// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: PEDAIS E PILOTO AUTÔNOMO
-// ---------------------------------------------------------
 void Controle_Pedais() {
     if (estado_atual == MODO_EMERGENCIA) return;
 
@@ -79,9 +71,7 @@ void Controle_Pedais() {
     }
 }
 
-// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: SEGURANÇA (OPÇÃO A)
-// ---------------------------------------------------------
 void Sistema_Anti_Colisao() {
     if (HAL_GPIO_ReadPin(PORT_SENSORES, PINO_OBSTACULO) == GPIO_PIN_SET) {
         if (tick_atual - timer_500ms >= 500) {
@@ -91,9 +81,7 @@ void Sistema_Anti_Colisao() {
     }
 }
 
-// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: ATUAÇÃO DE POTÊNCIA
-// ---------------------------------------------------------
 void Controle_Rele_Potencia() {
     if (duty_cycle < 19) {
         HAL_GPIO_WritePin(PORT_RELE, PINO_RELE, GPIO_PIN_RESET); // Desliga 12V
@@ -102,9 +90,7 @@ void Controle_Rele_Potencia() {
     }
 }
 
-// ---------------------------------------------------------
 // LOOP PRINCIPAL (FOREGROUND SCHEDULER)
-// ---------------------------------------------------------
 int main(void) {
     // Inicialização da HAL e do Hardware interno do STM32 (Clocks, Timers, ADC)
     Hardware_Init();
