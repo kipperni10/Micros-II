@@ -1,20 +1,16 @@
 /*
  * Arquivo: main.c
- * Descrição: Loop principal e máquina de estados do Computador de Bordo.
- * Microcontrolador: PIC16F84 (4 MHz)
- * Funcionalidade: Controle de RPM (PWM Bit-Banging), Odometria, Piloto Automático (Opção A) e Telemetria.
+ * Placa: NUCLEO-F446RE (STM32F446RE)
+ * Funcionalidade: Controle de RPM (Hardware PWM), Odometria (Hardware EXTI), 
+ * Piloto Automático (Opção A) e Telemetria via ADC.
  */
 
-// CONFIGURAÇÃO DOS FUSE BITS DO PIC16F84
-#pragma config FOSC = XT   // Oscilador a Cristal (XT é usado para 4 MHz)
-#pragma config WDTE = OFF  // Watchdog Timer (Desabilitado para não resetar o laço PWM)
-#pragma config PWRTE = ON  // Power-up Timer (Habilitado para estabilizar tensão no boot)
-#pragma config CP = OFF    // Code Protection (Desabilitado)
-
-#include <xc.h>
+#include "main.h" // Biblioteca HAL do STM32
 #include "config.h"
 
+// ---------------------------------------------------------
 // DEFINIÇÕES DE ESTADO DO SISTEMA
+// ---------------------------------------------------------
 typedef enum {
     MODO_MANUAL,
     MODO_AUTONOMO,    // Piloto Automático ativado (< 300ms acelerador)
@@ -23,139 +19,132 @@ typedef enum {
 
 EstadoVeiculo estado_atual = MODO_MANUAL;
 
+// ---------------------------------------------------------
 // VARIÁVEIS GLOBAIS DE CONTROLE
-// Compartilhadas com isr.c, pwm_soft.c, display_mux.c e sensores.c
-volatile unsigned char duty_cycle = 0; // 0 a 100%
-volatile unsigned int rpm_atual = 0;
-volatile unsigned long odometria_pulsos = 0;
-volatile unsigned int tempo_acelerador_pressionado = 0;
+// ---------------------------------------------------------
+volatile uint8_t duty_cycle = 0;       // 0 a 100%
+volatile uint32_t rpm_atual = 0;
+volatile uint32_t odometria_pulsos = 0;
+uint32_t tempo_acelerador_pressionado = 0;
 
-// Flags de tempo atualizadas pela ISR do Timer0 (isr.c)
-extern volatile unsigned char timer_50ms_flag;
-extern volatile unsigned char timer_05s_flag;
-extern volatile unsigned char timer_1s_flag;
+// Variáveis para o Escalonador Não-Bloqueante (SysTick)
+uint32_t tick_atual = 0;
+uint32_t timer_50ms = 0;
+uint32_t timer_500ms = 0;
+uint32_t timer_1s = 0;
 
-// DECLARAÇÃO DAS FUNÇÕES EXTERNAS
-extern void executa_pwm_burst(unsigned char duty);
-extern void atualiza_interface_visual(void);
-extern void monitora_volante_e_setas(void);
-extern void monitora_temperatura(void);
+// ---------------------------------------------------------
+// DECLARAÇÃO DAS FUNÇÕES EXTERNAS (Módulos)
+// ---------------------------------------------------------
+extern void Hardware_Init(void);           // Inicializa Clocks, GPIOs, Timers e ADCs
+extern void Atualiza_Interface_Visual(void);
+extern void Monitora_Volante_e_Setas(void);
+extern void Monitora_Temperatura(void);
+extern void Set_PWM_Motor(uint8_t duty);   // Agora atua direto no registrador CCR do Timer do STM32
 
-// CONFIGURAÇÃO INICIAL (HARDWARE)
-void setup_inicial() {
-    // Configuração de I/O
-    TRISA = 0xFF; // Todas como entradas (Pedais, Botões, Sensor Proximidade, Temp, Volante)
-    TRISB = 0x01; // RB0 como entrada (Tacômetro/INT), resto como Saídas (Display, LED, PWM, Relé)
-    
-    // Configuração do TMR0 (Usado para multiplexação e base de tempo)
-    // Prescaler 1:64, Clock Interno (Fosc/4)
-    OPTION_REG = 0b00000101; 
-    
-    // Habilita Interrupções Globais (GIE), Timer0 (T0IE) e Externa RB0 (INTE)
-    INTCON = 0b11110000;     
-    
-    // Inicialização segura das saídas
-    PORTB = 0x00;
-}
-
+// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: PEDAIS E PILOTO AUTÔNOMO
-void controle_pedais() {
-    if (estado_atual == MODO_EMERGENCIA) return; // Trava comandos se em emergência
+// ---------------------------------------------------------
+void Controle_Pedais() {
+    if (estado_atual == MODO_EMERGENCIA) return;
 
-    if (PEDAL_ACELERADOR) {
-        tempo_acelerador_pressionado++;
+    // Leitura das GPIOs via HAL
+    if (HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_ACELERADOR) == GPIO_PIN_SET) {
+        tempo_acelerador_pressionado++; // Incrementado a cada 1ms no loop
         
-        // Se manteve pressionado por 0,5s
         if (tempo_acelerador_pressionado >= TEMPO_500MS) {
-            estado_atual = MODO_MANUAL; // Cancela modo autônomo
+            estado_atual = MODO_MANUAL;
             
-            // Incrementa 4% de duty cycle (limitado a 100%)
-            if (timer_05s_flag) { // Sincroniza o incremento com a base de tempo de 0.5s
+            // Incremento atrelado ao tick de 500ms
+            if (tick_atual - timer_500ms >= 500) {
                 if (duty_cycle <= 96) duty_cycle += 4;
                 else duty_cycle = 100;
             }
         }
     } else {
-        // Lógica da Opção A: Acelerador solto rapidamente (< 300ms) ativa o piloto automático
+        // Acelerador solto rapidamente (< 300ms) ativa piloto automático
         if (tempo_acelerador_pressionado > 0 && tempo_acelerador_pressionado < TEMPO_300MS) {
             estado_atual = MODO_AUTONOMO;
-            // O duty cycle atual é mantido constante
         }
-        tempo_acelerador_pressionado = 0; // Zera o contador ao soltar o pedal
+        tempo_acelerador_pressionado = 0;
     }
 
-    if (PEDAL_FREIO) {
-        estado_atual = MODO_MANUAL; // Tocar no freio desativa o piloto automático imediatamente
+    if (HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_FREIO) == GPIO_PIN_SET) {
+        estado_atual = MODO_MANUAL; 
         
-        if (timer_05s_flag) {
+        if (tick_atual - timer_500ms >= 500) {
             if (duty_cycle >= 20) duty_cycle -= 20; 
             else duty_cycle = 0;
         }
     }
 }
 
+// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: SEGURANÇA (OPÇÃO A)
-void sistema_anti_colisao() {
-    // Reduz 20% a cada 0.5s se detectar obstáculo frontal
-    if (SENSOR_OBSTACULO == 1) {
-        if (timer_05s_flag) {
+// ---------------------------------------------------------
+void Sistema_Anti_Colisao() {
+    if (HAL_GPIO_ReadPin(PORT_SENSORES, PINO_OBSTACULO) == GPIO_PIN_SET) {
+        if (tick_atual - timer_500ms >= 500) {
             if (duty_cycle >= 20) duty_cycle -= 20;
             else duty_cycle = 0;
         }
     }
 }
 
+// ---------------------------------------------------------
 // LÓGICA DE CONTROLE: ATUAÇÃO DE POTÊNCIA
-void controle_rele_potencia() {
-    // O ventilador não desliga via PWM a 0%. Abaixo de 19%, cortamos a alimentação via relé.
+// ---------------------------------------------------------
+void Controle_Rele_Potencia() {
     if (duty_cycle < 19) {
-        RELE_MOTOR = 0; 
+        HAL_GPIO_WritePin(PORT_RELE, PINO_RELE, GPIO_PIN_RESET); // Desliga 12V
     } else {
-        RELE_MOTOR = 1; 
+        HAL_GPIO_WritePin(PORT_RELE, PINO_RELE, GPIO_PIN_SET);   // Liga 12V
     }
 }
 
+// ---------------------------------------------------------
 // LOOP PRINCIPAL (FOREGROUND SCHEDULER)
-void main() {
-    setup_inicial();
+// ---------------------------------------------------------
+int main(void) {
+    // Inicialização da HAL e do Hardware interno do STM32 (Clocks, Timers, ADC)
+    Hardware_Init();
     
-    while(1) {
-        // 1. DOMÍNIO DE POTÊNCIA (Bloqueante por ~5ms)
-        // Mantém a estabilidade do motor operando no range de 25kHz exigido pela Intel
-        executa_pwm_burst(duty_cycle);
+    while (1) {
+        tick_atual = HAL_GetTick(); // Captura o tempo atual do sistema em milissegundos
         
-        // 2. DOMÍNIO DE TELEMETRIA E IHM (Execução em < 1ms)
+        // 1. ATUAÇÃO DO HARDWARE (Instantâneo)
+        Set_PWM_Motor(duty_cycle); // Altera o registrador de hardware (CCR). O sinal contínuo de 25kHz é mantido pelo Timer do STM32.
         
-        // Verificações que rodam a cada ciclo (aprox. a cada 5ms devido ao PWM)
-        monitora_volante_e_setas();
+        // 2. TAREFAS DE ALTA FREQUÊNCIA (~1ms)
+        Monitora_Volante_e_Setas();
+        Atualiza_Interface_Visual(); // A multiplexação pode continuar aqui ou ir para um Timer Básico (TIM6)
         
-        // Verificações baseadas na flag de 50ms
-        if (timer_50ms_flag) {
-            monitora_temperatura();
-            timer_50ms_flag = 0; // Consome a flag
+        // 3. TAREFAS DE MÉDIA FREQUÊNCIA (50ms)
+        if (tick_atual - timer_50ms >= 50) {
+            Monitora_Temperatura();
+            timer_50ms = tick_atual;
         }
         
-        // Lógica de decisão
-        controle_pedais();
-        sistema_anti_colisao();
-        controle_rele_potencia();
+        // 4. LÓGICA DE DECISÃO (Requer avaliação contínua)
+        Controle_Pedais();
+        Sistema_Anti_Colisao();
+        Controle_Rele_Potencia();
         
-        // Trata eventos baseados em 1 segundo (Freio motor inercial)
-        if (timer_1s_flag) {
-            // Se nenhum pedal acionado e não estiver em piloto automático
-            if (!PEDAL_ACELERADOR && !PEDAL_FREIO && estado_atual != MODO_AUTONOMO) {
+        // Sincroniza o timer de 500ms usado nos pedais e colisão
+        if (tick_atual - timer_500ms >= 500) {
+            timer_500ms = tick_atual;
+        }
+        
+        // 5. TAREFAS DE BAIXA FREQUÊNCIA (1s) - Freio Motor Inercial
+        if (tick_atual - timer_1s >= 1000) {
+            if (HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_ACELERADOR) == GPIO_PIN_RESET && 
+                HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_FREIO) == GPIO_PIN_RESET && 
+                estado_atual != MODO_AUTONOMO) {
+                
                 if (duty_cycle >= 4) duty_cycle -= 4;
                 else duty_cycle = 0;
             }
-            timer_1s_flag = 0; // Consome a flag
+            timer_1s = tick_atual;
         }
-
-        // Consome a flag de 0.5s após todas as rotinas que dependem dela terem executado
-        if (timer_05s_flag) {
-            timer_05s_flag = 0; 
-        }
-        
-        // Atualiza a preparação do buffer do Display (A multiplexação real roda na ISR)
-        atualiza_interface_visual(); 
     }
 }
