@@ -1,36 +1,45 @@
+/*
+ * Arquivo: config.h
+ * Descrição: Definições de pinagem e constantes para NUCLEO-F446RE.
+ */
+
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <xc.h>
+#include "stm32f4xx_hal.h"
 
-// Configurações do Oscilador (Necessário para a macro __delay_ms funcionar)
-#define _XTAL_FREQ 4000000 // Cristal de 4 MHz
+// MAPEAMENTO DE ENTRADAS (Conectores Analógicos/Digitais Arduino)
+#define PORT_PEDAIS          GPIOA
+#define PINO_ACELERADOR      GPIO_PIN_0  // Pino A0 (Entrada digital/ADC)
+#define PINO_FREIO           GPIO_PIN_1  // Pino A1 (Entrada digital/ADC)
 
-// MAPEAMENTO DE ENTRADAS (Sensores e IHM)
-// Assumindo entradas conectadas ao PORTA e pinos restantes do PORTB
-#define PEDAL_ACELERADOR PORTAbits.RA0
-#define PEDAL_FREIO      PORTAbits.RA1
-#define BOTAO_FUNCAO     PORTAbits.RA2
-#define BOTAO_SELECIONA  PORTAbits.RA3
-#define SENSOR_OBSTACULO PORTAbits.RA4 // Usado na Opção A
+#define PORT_SENSORES        GPIOA
+#define PINO_OBSTACULO       GPIO_PIN_4  // Pino A2 (Sensor ultrassônico/ótico - Opção A)
 
-// MAPEAMENTO DE SAÍDAS (Atuadores e IHM)
-// O Tacômetro (Tach) do Intel Fan DEVE obrigatoriamente estar no pino RB0/INT
-// O pino de PWM será chaveado no software (bit-banging)
-#define PINO_PWM         PORTBbits.RB1
-#define RELE_MOTOR       PORTBbits.RB2
-#define LED_ALERTA       PORTBbits.RB3
+#define PORT_BOTOES          GPIOC
+#define PINO_BOTAO_FUNCAO    GPIO_PIN_1  // Pino PC1 (Botão de Função)
+#define PINO_BOTAO_SELECIONA GPIO_PIN_0  // Pino PC0 (Botão de Seleção)
+
+// MAPEAMENTO DE SAÍDAS E ATUADORES
+// O PWM por hardware utilizará o TIM2 (Canal 2), mapeado no pino PB3
+#define PORT_PWM             GPIOB
+#define PINO_PWM             GPIO_PIN_3  // Pino D3 (Saída PWM do Motor)
+
+#define PORT_RELE            GPIOB
+#define PINO_RELE            GPIO_PIN_5  // Pino D4 (Controle do Relé de Alimentação)
+
+#define PORT_LEDS            GPIOB
+#define PINO_LED_ALERTA      GPIO_PIN_4  // Pino D5 (LED de Alerta de Temperatura)
 
 // Pinos de controle de multiplexação do Display de 7 segmentos
-#define SEL_DISPLAY_0    PORTBbits.RB4
-#define SEL_DISPLAY_1    PORTBbits.RB5
-#define SEL_DISPLAY_2    PORTBbits.RB6
+#define PORT_DISP_SEL        GPIOA
+#define PINO_SEL_DISPLAY_0   GPIO_PIN_10 // Pino D6
+#define PINO_SEL_DISPLAY_1   GPIO_PIN_8  // Pino D7
+#define PORT_DISP_SEL_2      GPIOB
+#define PINO_SEL_DISPLAY_2   GPIO_PIN_10 // Pino D8
 
-// Porta ou pinos designados para enviar o dado BCD ao display
-#define PORTA_DADOS_DISP PORTB // Ajuste conforme o roteamento real da placa
-
-// MACROS DE TEMPO (Baseadas na interrupção do TMR0 de 1ms)
-#define TEMPO_300MS 300 // Usado para detectar movimento rápido (piloto automático)
-#define TEMPO_500MS 500 // Usado para resposta dos pedais
+// CONSTANTES DE TEMPO (Baseadas no clock de 1ms SysTick)
+#define TEMPO_300MS          300
+#define TEMPO_500MS          500
 
 #endif
