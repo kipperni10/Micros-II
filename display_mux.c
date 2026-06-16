@@ -41,14 +41,20 @@ void Envia_Dado_Display(uint8_t valor) {
 void Atualiza_Interface_Visual() {
     uint32_t tick_atual = HAL_GetTick();
 
-    // 1. Lógica de Navegação (Botão Função) com debounce simples
+    // 1. Lógica de Navegação (Botão Função) Não-Bloqueante
+    static uint8_t botao_pressionado_anteriormente = 0; // Memória de estado
+
     if (HAL_GPIO_ReadPin(PORT_BOTOES, PINO_BOTAO_FUNCAO) == GPIO_PIN_SET) {
-        HAL_Delay(50); // Debounce
-        if (HAL_GPIO_ReadPin(PORT_BOTOES, PINO_BOTAO_FUNCAO) == GPIO_PIN_SET) {
+        if (!botao_pressionado_anteriormente) {
+            // Registra a transição de borda de subida
+            botao_pressionado_anteriormente = 1;
+            
             tela_selecionada++;
             if (tela_selecionada > TELA_ALERTA_TEMP) tela_selecionada = TELA_VELOCIDADE;
-            while(HAL_GPIO_ReadPin(PORT_BOTOES, PINO_BOTAO_FUNCAO) == GPIO_PIN_SET); // Aguarda soltar
         }
+    } else {
+        // Reseta o estado apenas quando o usuário soltar o botão fisicamente
+        botao_pressionado_anteriormente = 0;
     }
 
     // 2. Formatação do Buffer de Memória
