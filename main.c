@@ -5,6 +5,12 @@
  * Funcionalidade: Controle de RPM (PWM Bit-Banging), Odometria, Piloto Automático (Opção A) e Telemetria.
  */
 
+// CONFIGURAÇÃO DOS FUSE BITS DO PIC16F84
+#pragma config FOSC = XT   // Oscilador a Cristal (XT é usado para 4 MHz)
+#pragma config WDTE = OFF  // Watchdog Timer (Desabilitado para não resetar o laço PWM)
+#pragma config PWRTE = ON  // Power-up Timer (Habilitado para estabilizar tensão no boot)
+#pragma config CP = OFF    // Code Protection (Desabilitado)
+
 #include <xc.h>
 #include "config.h"
 
