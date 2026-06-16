@@ -134,3 +134,14 @@ int main(void) {
         }
     }
 }
+
+// Callback invocado automaticamente pelo hardware quando o pino do tacômetro muda de estado
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == PINO_TACOMETRO) { // Pino configurado no CubeMX
+        extern volatile uint32_t pulsos_taco;
+        extern volatile uint32_t odometria_pulsos;
+        
+        pulsos_taco++;
+        odometria_pulsos++;
+    }
+}
