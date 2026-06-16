@@ -21,6 +21,7 @@ EstadoVeiculo estado_atual = MODO_MANUAL;
 volatile uint8_t duty_cycle = 0;       // 0 a 100%
 volatile uint32_t rpm_atual = 0;
 volatile uint32_t odometria_pulsos = 0;
+volatile uint32_t pulsos_taco = 0;
 uint32_t tempo_acelerador_pressionado = 0;
 
 // Variáveis para o Escalonador Não-Bloqueante (SysTick)
