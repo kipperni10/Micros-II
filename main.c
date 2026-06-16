@@ -121,8 +121,17 @@ int main(void) {
             timer_500ms = tick_atual;
         }
         
-        // 5. TAREFAS DE BAIXA FREQUÊNCIA (1s) - Freio Motor Inercial
+        // 5. TAREFAS DE BAIXA FREQUÊNCIA (1s)
         if (tick_atual - timer_1s >= 1000) {
+            
+            // --- CÁLCULO DE RPM E ODOMETRIA ---
+            extern volatile uint32_t pulsos_taco;
+            
+            // O fan gera 2 pulsos por revolução. RPM = (pulsos em 1s * 60) / 2
+            rpm_atual = (pulsos_taco * 60) / 2; 
+            pulsos_taco = 0; // Zera a janela de leitura para o próximo segundo
+            
+            // FREIO MOTOR INERCIAL
             if (HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_ACELERADOR) == GPIO_PIN_RESET && 
                 HAL_GPIO_ReadPin(PORT_PEDAIS, PINO_FREIO) == GPIO_PIN_RESET && 
                 estado_atual != MODO_AUTONOMO) {
